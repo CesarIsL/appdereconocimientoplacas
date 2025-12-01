@@ -16,7 +16,17 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Detector de Placas',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData.dark().copyWith(
+        primaryColor: Colors.tealAccent,
+        hintColor: Colors.tealAccent,
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Colors.tealAccent,
+        ),
+        textTheme: const TextTheme(
+          bodyLarge: TextStyle(color: Colors.white),
+          bodyMedium: TextStyle(color: Colors.white70),
+        ),
+      ),
       home: const HomePage(),
     );
   }
@@ -31,57 +41,115 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   File? _image;
-  String? _plateText;
-  String? _plateBase64;
-  Map<String, dynamic>? _vehiculoInfo;
+  Map<String, dynamic>? _result;
+  bool _isLoading = false;
 
   final ImagePicker _picker = ImagePicker();
 
-  Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.camera);
+  Future<void> _pickImage(ImageSource source) async {
+    final pickedFile = await _picker.pickImage(source: source);
     if (pickedFile == null) return;
 
     setState(() {
       _image = File(pickedFile.path);
-      _plateText = null;
-      _plateBase64 = null;
-      _vehiculoInfo = null;
+      _result = null;
+      _isLoading = true;
     });
 
-    final result = await ApiService.detectPlate(_image!);
+    try {
+      final result = await ApiService.detectPlate(_image!);
+      setState(() {
+        _result = result;
+      });
+    } catch (e) {
+      setState(() {
+        _result = {'text': 'Error: $e', 'plate_image': null, 'vehiculo_info': null};
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
-    setState(() {
-      _plateText = result['text'];
-      _plateBase64 = result['plate_image'];
-      _vehiculoInfo = result['vehiculoInfo']; // <-- info del vehículo
-    });
+  void _showPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext bc) {
+        return SafeArea(
+          child: Wrap(
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Galería de Fotos'),
+                onTap: () {
+                  _pickImage(ImageSource.gallery);
+                  Navigator.of(context).pop();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Cámara'),
+                onTap: () {
+                  _pickImage(ImageSource.camera);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Detector de Placas')),
+      appBar: AppBar(
+        title: const Text('Detector de Placas', style: TextStyle(fontWeight: FontWeight.bold)),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+      ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              ElevatedButton.icon(
-                icon: const Icon(Icons.camera_alt),
-                label: const Text("Tomar foto"),
-                onPressed: _pickImage,
-              ),
-              const SizedBox(height: 20),
-              if (_plateText != null || _plateBase64 != null || _vehiculoInfo != null)
-                PlateResult(
-                  text: _plateText,
-                  base64Image: _plateBase64,
-                  vehiculoInfo: _vehiculoInfo, // <-- pasamos info del vehículo
+              if (_isLoading)
+                const CircularProgressIndicator()
+              else if (_image == null)
+                const Text(
+                  'Presiona el botón para escanear una placa',
+                  style: TextStyle(fontSize: 18),
+                  textAlign: TextAlign.center,
+                )
+              else
+                Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.tealAccent, width: 2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.file(_image!, fit: BoxFit.cover),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    if (_result != null) PlateResult(result: _result),
+                  ],
                 ),
             ],
           ),
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showPicker(context),
+        tooltip: 'Escanear Placa',
+        child: const Icon(Icons.camera_alt, color: Colors.black),
       ),
     );
   }
